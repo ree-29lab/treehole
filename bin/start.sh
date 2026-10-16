@@ -100,6 +100,21 @@ if [ -z "$TUNNEL_URL" ]; then
 fi
 echo "公网隧道开了：${TUNNEL_URL}（每次重启都会换一个，入口页会自动跟过去）"
 
+# 等这个地址真的能打开：刚建好的 quick tunnel 要几秒 DNS 才生效，
+# 太早把地址发出去，访客会撞上「解析不到」。
+echo "等地址生效…"
+READY=0
+for _ in $(seq 1 15); do
+  if curl -sf -o /dev/null --max-time 5 "${TUNNEL_URL}/healthz"; then READY=1; break; fi
+  sleep 2
+done
+if [ "$READY" = "1" ]; then
+  echo "地址已验证可以访问。"
+else
+  echo "⚠️ 本机还连不上这个地址（可能只是本机 DNS 缓存，别人的网络通常没问题）。"
+  echo "   等半分钟刷新入口页再试；一直不行就 bin/stop.sh 后重新 bin/start.sh 换个地址。"
+fi
+
 # ---------- 3. 入口页 ----------
 if gh auth status >/dev/null 2>&1 && gh repo view "$PAGES_REPO" >/dev/null 2>&1; then
   if publish_now_json "$TUNNEL_URL" true; then
