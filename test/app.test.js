@@ -34,7 +34,9 @@ function client(ip = nextIp()) {
     const merged = { 'cf-connecting-ip': ip, ...headers };
     if (form) {
       merged['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
-      merged.Origin = merged.Origin ?? base;
+      // Origin: null（真的 null）表示「这次连 Origin 都不发」，用来模拟内置 WebView。
+      if (!('Origin' in headers)) merged.Origin = base;
+      else if (headers.Origin === null) delete merged.Origin;
     }
     if (jar.size > 0) {
       merged.cookie = [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
@@ -288,6 +290,32 @@ test('来自别的站点的提交会被拒', async () => {
     { headers: { Origin: 'https://evil.example' } }
   );
   assert.equal(response.status, 403);
+});
+
+test('浏览器不给 Origin 时不会把主人挡在门外（靠 nonce 把关）', async () => {
+  // 微信/QQ 内置 WebView、沙盒化页面会发 Origin: null，或者干脆不发这一条。
+  const cases = [
+    { Origin: 'null' },
+    { Origin: '' },
+    { Origin: null }
+  ];
+  for (const headers of cases) {
+    const author = client();
+    await author.enter();
+    const nonce = await author.nonce('/');
+    const response = await author.post(
+      '/post',
+      { nonce, body: `没有 Origin 也要能发：${JSON.stringify(headers)}`, mood: '' },
+      { headers }
+    );
+    assert.equal(response.status, 302, `${JSON.stringify(headers)} 应该放行`);
+  }
+
+  // 但 nonce 仍然是硬门槛：没有它照样拒。
+  const author = client();
+  await author.enter();
+  const noNonce = await author.post('/post', { nonce: 'deadbeefdeadbeef', body: '没有有效 nonce' }, { headers: { Origin: 'null' } });
+  assert.equal(noNonce.status, 409);
 });
 
 test('限流：一分钟内第二条就发不出去', async () => {
