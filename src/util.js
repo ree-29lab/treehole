@@ -113,22 +113,51 @@ export function shortHash(hex, length = 16) {
   return hex.slice(0, length);
 }
 
-/** True when the request looks same-origin (blocks cross-site form posts). */
+/**
+ * Cross-site form submission check.
+ *
+ * The real guard against CSRF here is the single-use nonce in every form: a page on
+ * another site cannot read one. This check only rejects a submission that *clearly*
+ * came from a different host, and deliberately lets through the cases where a browser
+ * or in-app WebView gives us nothing usable to compare:
+ *   - no Origin header at all (WeChat/QQ 内置浏览器、部分老 WebView 会这样)
+ *   - `Origin: null`（沙盒化 iframe、代理过的页面会这样）
+ * Rejecting those locked real users out of their own board, so they fall back to the nonce.
+ */
 export function sameOrigin(req) {
-  const origin = req.headers.origin;
   const host = req.headers.host;
+  const origin = req.headers.origin;
+
   if (!origin) {
     const referer = req.headers.referer;
-    if (!referer) return false;
+    if (!referer) return true;
     try {
       return new URL(referer).host === host;
     } catch {
-      return false;
+      return true;
     }
   }
+
+  if (origin === 'null') return true;
+
   try {
     return new URL(origin).host === host;
   } catch {
-    return false;
+    return true;
   }
 }
+
+/** Host-only description of where a request claims to come from, for logs. */
+export function originLabel(req) {
+  const describe = (value) => {
+    try {
+      return new URL(value).host;
+    } catch {
+      return String(value ?? '').slice(0, 20);
+    }
+  };
+  const origin = req.headers.origin;
+  const referer = req.headers.referer;
+  return `origin=${origin ? describe(origin) : '(无)'} referer=${referer ? describe(referer) : '(无)'} host=${req.headers.host ?? '(无)'}`;
+}
+
