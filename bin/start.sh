@@ -57,13 +57,24 @@ case "$(uname -m)" in
   *) echo "不认识的 CPU 架构：$(uname -m)"; exit 1 ;;
 esac
 
+if [ ! -x bin/cloudflared ] && command -v cloudflared >/dev/null 2>&1; then
+  ln -sf "$(command -v cloudflared)" bin/cloudflared
+  echo "用系统里已装的 cloudflared：$(command -v cloudflared)"
+fi
+
 if [ ! -x bin/cloudflared ]; then
-  echo "第一次要下载 cloudflared（约 20MB，从 GitHub 官方发布页拿）…"
-  curl -fsSL -o data/cloudflared.tgz \
-    "https://github.com/cloudflare/cloudflared/releases/latest/download/${CF_ASSET}"
+  echo "第一次要下载 cloudflared（约 20MB，从 GitHub 官方发布页拿，国内可能要几分钟）…"
+  if ! curl -fL --retry 5 --retry-delay 3 -C - -o data/cloudflared.tgz \
+    "https://github.com/cloudflare/cloudflared/releases/latest/download/${CF_ASSET}"; then
+    echo "下载失败。两条替代路线："
+    echo "  1) 挂上代理再跑一次这个脚本（会断点续传）；"
+    echo "  2) brew install cloudflared，再跑一次这个脚本（会自动用它）。"
+    exit 1
+  fi
   tar -xzf data/cloudflared.tgz -C bin
   chmod +x bin/cloudflared
   rm -f data/cloudflared.tgz
+  echo "cloudflared 装好了。"
 fi
 
 if [ -f data/tunnel.pid ] && kill -0 "$(cat data/tunnel.pid)" 2>/dev/null; then
@@ -87,7 +98,7 @@ if [ -z "$TUNNEL_URL" ]; then
   tail -20 logs/tunnel.log || true
   exit 1
 fi
-echo "公网隧道开了：$TUNNEL_URL（每次重启都会换一个，入口页会自动跟过去）"
+echo "公网隧道开了：${TUNNEL_URL}（每次重启都会换一个，入口页会自动跟过去）"
 
 # ---------- 3. 入口页 ----------
 if gh auth status >/dev/null 2>&1 && gh repo view "$PAGES_REPO" >/dev/null 2>&1; then
