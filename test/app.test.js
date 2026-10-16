@@ -5,7 +5,7 @@
 
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -475,14 +475,66 @@ test('勾了「自动消失」的帖子会带上倒计时，到点后连回应�
   assert.equal(Number(left.n), 0, '到点自毁是真删，不是标记');
 });
 
-test('隐私说明页能打开，并且把「站长能看到内容」写明白了', async () => {
+test('隐私说明页把「对谁匿名」讲清楚，不写绝对话', async () => {
   const visitor = client();
   await visitor.enter();
   const page = await visitor.get('/privacy');
   assert.equal(page.status, 200);
   const html = await page.text();
-  assert.match(html, /不记 IP 地址/);
-  assert.match(html, /站长）能看到全部内容/);
-  assert.match(html, /随时删掉自己写的/);
+  assert.match(html, /对谁匿名/);
+  assert.match(html, /不存 IP 原文/);
+  assert.match(html, /能看到你写的正文和你的 IP/, '要点名 Cloudflare 看得到正文，不只是元数据');
+  assert.match(html, /GitHub/, '入口页那一跳也要写出来');
+  assert.match(html, /不使用 localStorage/);
+  assert.match(html, /最多留 7 份/, '备份留存期要写明');
+  assert.match(html, /如果站长被要求配合调查/, '不承诺对抗强制调取');
   assert.match(html, /12356/);
+  assert.ok(!html.includes('完全匿名'), '不该承诺「完全匿名」');
+  assert.match(html, /不是「查不到」/, '要把保证的范围说死');
+});
+
+test('走 HTTPS 时 cookie 带 Secure，本机 http 调试时不带', async () => {
+  const overHttps = client();
+  const httpsGate = await overHttps.send('/gate', {
+    method: 'POST',
+    form: { passphrase: PASSPHRASE },
+    headers: { 'x-forwarded-proto': 'https' }
+  });
+  const httpsCookies = httpsGate.headers.getSetCookie().join(' ');
+  assert.match(httpsCookies, /Secure/, '走隧道时应该加 Secure');
+
+  const local = client();
+  const localGate = await local.send('/gate', {
+    method: 'POST',
+    form: { passphrase: PASSPHRASE }
+  });
+  assert.ok(!localGate.headers.getSetCookie().join(' ').includes('Secure'), '本机 http 下加了就登不上');
+});
+
+test('删掉的内容在磁盘上也不留明文', async () => {
+  const marker = `marker-${Math.random().toString(36).slice(2, 10)}-zq`; // 别带长数字串，会被当手机号拦掉
+  const author = client();
+  await author.enter();
+  const nonce = await author.nonce('/');
+  const posted = await author.post('/post', { nonce, body: `要删掉的 ${marker}`, mood: '' });
+  const postId = Number(posted.headers.get('location').match(/#p(\d+)/)[1]);
+
+  const removeNonce = await author.nonce('/mine');
+  const removed = await author.post('/delete', {
+    nonce: removeNonce,
+    target_type: 'post',
+    target_id: String(postId),
+    back: '/mine'
+  });
+  assert.equal(removed.status, 302);
+
+  started.app.database.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  const files = [join(dataDir, 'treehole.db'), join(dataDir, 'treehole.db-wal')];
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    assert.ok(
+      !readFileSync(file).includes(marker),
+      `${file} 里还能搜到删掉的内容（secure_delete 没生效）`
+    );
+  }
 });
