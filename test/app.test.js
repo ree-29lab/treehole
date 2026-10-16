@@ -394,14 +394,38 @@ test('三条举报会自动折叠，管理员可以恢复，也可以删掉', as
   assert.equal((await author.get(`/p/${postId}`)).status, 200, '恢复后又能看了');
 });
 
-test('后台需要独立口令', async () => {
+test('后台不需要先过访客门禁（改访客口令不会把管理员关在门外）', async () => {
+  const owner = client(); // 完全没有 tk cookie
+  const page = await owner.get('/admin');
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /后台口令/);
+
+  const login = await owner.post('/admin/login', { passphrase: ADMIN });
+  assert.equal(login.status, 302);
+  assert.equal(login.headers.get('location'), '/admin');
+  assert.ok(owner.jar.get('adm'), '应该拿到后 adm cookie');
+
+  const dashboard = await owner.get('/admin');
+  assert.equal(dashboard.status, 200);
+  assert.match(await dashboard.text(), /待处理举报/);
+
+  // 但内容还是要有访客口令才看得到
+  const feed = await client().get('/');
+  assert.equal(feed.headers.get('location'), '/gate');
+});
+
+test('后台口令写错会被拒，且不会种下后台 cookie', async () => {
+  const owner = client();
+  const wrong = await owner.post('/admin/login', { passphrase: '不是这个' });
+  assert.equal(wrong.status, 401);
+  assert.equal(owner.jar.get('adm'), undefined);
+});
+
+test('过完访客门禁也拿不到后台，除非再输后台口令', async () => {
   const visitor = client();
   await visitor.enter();
   const page = await visitor.get('/admin');
-  assert.match(await page.text(), /管理员口令/);
-
-  const wrong = await visitor.post('/admin/login', { passphrase: '不是这个' });
-  assert.equal(wrong.status, 401);
+  assert.match(await page.text(), /后台口令/);
 
   const exportDenied = await visitor.get('/admin/export');
   assert.equal(exportDenied.status, 403, '没登录后台就拿不到导出');
