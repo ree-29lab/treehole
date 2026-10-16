@@ -293,7 +293,10 @@ export function createApp(config) {
       });
     }
 
-    if (!gateAuthed(cookies)) {
+    // 后台用的是另一个口令，不该被访客门禁挡住 —— 否则改一次访客口令，
+    // 连管理员自己都会被弹到口令页，还以为是后台口令错了。
+    const adminArea = path === '/admin' || path.startsWith('/admin/');
+    if (!adminArea && !gateAuthed(cookies)) {
       return redirect(res, path === '/' ? '/gate' : `/gate?next=${encodeURIComponent(path + url.search)}`);
     }
 
@@ -492,7 +495,7 @@ export function createApp(config) {
       }
       const form = await readForm(req);
       if (!auth.phraseMatches(form.get('passphrase'), credentials.adminPassphrase)) {
-        return sendHtml(res, 401, views.adminLoginPage({ error: '管理员口令不对。' }));
+        return sendHtml(res, 401, views.adminLoginPage({ error: '后台口令不对。（访客口令在这里不管用，两个是分开的。）' }));
       }
       return redirect(res, '/admin', {
         'Set-Cookie': serializeCookie('adm', auth.adminToken(credentials), {
