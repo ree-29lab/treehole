@@ -100,9 +100,10 @@ if [ -z "$TUNNEL_URL" ]; then
 fi
 echo "公网隧道开了：${TUNNEL_URL}（每次重启都会换一个，入口页会自动跟过去）"
 
-# 等这个地址真的能打开：刚建好的 quick tunnel 要几秒 DNS 才生效，
-# 太早把地址发出去，访客会撞上「解析不到」。
-echo "等地址生效…"
+# 先等 20 秒再问：刚建好的 quick tunnel 要一点时间才在公共 DNS 里生效，
+# 太早问一次会把自己（和访客）的解析器喂进一个「查不到」的缓存，反而要多等几分钟。
+echo "等 20 秒让地址在 DNS 里生效…"
+sleep 20
 READY=0
 for _ in $(seq 1 15); do
   if curl -sf -o /dev/null --max-time 5 "${TUNNEL_URL}/healthz"; then READY=1; break; fi
