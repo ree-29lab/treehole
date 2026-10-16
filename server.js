@@ -206,6 +206,7 @@ export function createApp(config) {
       posts,
       moods: settings.moods,
       mood,
+      expireDays: settings.expireDays,
       hasMore,
       flash: flash ?? FLASHES[url.searchParams.get('flash')] ?? null,
       error,
@@ -319,6 +320,11 @@ export function createApp(config) {
       return sendHtml(res, 200, views.rulesPage(), device.setCookie ? { 'Set-Cookie': device.setCookie } : {});
     }
 
+    if (req.method === 'GET' && path === '/privacy') {
+      const page = views.privacyPage({ expireDays: settings.expireDays });
+      return sendHtml(res, 200, page, device.setCookie ? { 'Set-Cookie': device.setCookie } : {});
+    }
+
     if (req.method === 'GET' && path === '/mine') {
       const posts = store.listPosts(database, { limit: 100, deviceHash: device.deviceHash, includeHidden: true });
       const ctx = baseCtx({ deviceHash: device.deviceHash, issueNonce, back: '/mine' });
@@ -361,13 +367,17 @@ export function createApp(config) {
       const moodKey = String(form.get('mood') ?? '');
       const mood = settings.moods.some((m) => m.key === moodKey) ? moodKey : '';
       const now = Date.now();
+      // 勾了「N 天后自动消失」的帖子，到点连回应一起真删（见 purgeExpiredPosts）
+      const wantsExpiry = form.get('expire') !== null && form.get('expire') !== '';
+      const expiresAt = wantsExpiry ? now + settings.expireDays * 86400000 : null;
       const id = store.createPost(database, {
         body: checked.text,
         mood,
         code: '……',
         deviceHash: device.deviceHash,
         crisis: checked.crisis,
-        now
+        now,
+        expiresAt
       });
       store.setPostCode(database, id, auth.displayCode(words, device.deviceHash, id));
       const headers = device.setCookie ? { 'Set-Cookie': device.setCookie } : {};
@@ -574,13 +584,25 @@ export function createApp(config) {
     });
   });
 
+  // 到点自毁：页面在读取时就已经看不到过期帖，这里负责把它们真正从磁盘上删掉。
+  // unref 是为了不拖住进程退出（测试里尤其重要）。
+  const sweep = setInterval(() => {
+    const removed = store.purgeExpiredPosts(database);
+    if (removed.length > 0) console.log(`[treehole] 到点自毁：删掉 ${removed.length} 条`);
+  }, Math.max(1, settings.sweepMinutes) * 60000);
+  sweep.unref();
+
   return {
     server,
     database,
     config,
     /** Exposed for tests. */
     issueNonce,
+    purgeExpired() {
+      return store.purgeExpiredPosts(database);
+    },
     close() {
+      clearInterval(sweep);
       server.close();
       database.close();
     },
