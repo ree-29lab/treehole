@@ -15,7 +15,7 @@ import * as auth from './src/auth.js';
 import * as views from './src/render.js';
 import { loadConfig } from './src/config.js';
 import { validateBody } from './src/filter.js';
-import { clientIp, parseCookies, serializeCookie, sameOrigin } from './src/util.js';
+import { clientIp, originLabel, parseCookies, serializeCookie, sameOrigin } from './src/util.js';
 
 const PROJECT_ROOT = dirname(fileURLToPath(import.meta.url));
 
@@ -123,9 +123,20 @@ export function createApp(config) {
     return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
   }
 
+  /**
+   * Reject a submission that clearly came from another site. The single-use nonce is
+   * the real CSRF guard; this only catches the obvious cases, and logs why it fired so
+   * a locked-out visitor can be diagnosed from logs/server.log instead of guesswork.
+   */
+  function assertSameOrigin(req) {
+    if (sameOrigin(req)) return;
+    console.warn(`[treehole] 拒了一次疑似跨站提交：${originLabel(req)}`);
+    throw new HttpError(403, '这个提交不是从本站页面发出来的。');
+  }
+
   /** Every mutating request must come from this site and carry a fresh nonce. */
   function guardPost(req, res, form) {
-    if (!sameOrigin(req)) throw new HttpError(403, '这个提交不是从本站页面发出来的。');
+    assertSameOrigin(req);
     if (!consumeNonce(form.get('nonce'))) {
       throw new HttpError(409, '这个表单已经提交过了，或者放了太久。刷新页面再试一次。');
     }
@@ -408,7 +419,7 @@ export function createApp(config) {
 
     if (req.method === 'POST' && path === '/hug') {
       const form = await readForm(req);
-      if (!sameOrigin(req)) throw new HttpError(403, '这个提交不是从本站页面发出来的。');
+      assertSameOrigin(req);
       const targetType = String(form.get('target_type') ?? '');
       const targetId = Number(form.get('target_id') ?? 0);
       const back = safeBack(form.get('back'));
@@ -435,7 +446,7 @@ export function createApp(config) {
 
     if (req.method === 'POST' && path === '/report') {
       const form = await readForm(req);
-      if (!sameOrigin(req)) throw new HttpError(403, '这个提交不是从本站页面发出来的。');
+      assertSameOrigin(req);
       const targetType = String(form.get('target_type') ?? '');
       const targetId = Number(form.get('target_id') ?? 0);
       const back = safeBack(form.get('back'));
