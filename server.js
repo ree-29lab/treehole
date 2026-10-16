@@ -15,7 +15,7 @@ import * as auth from './src/auth.js';
 import * as views from './src/render.js';
 import { loadConfig } from './src/config.js';
 import { validateBody } from './src/filter.js';
-import { clientIp, originLabel, parseCookies, serializeCookie, sameOrigin } from './src/util.js';
+import { clientIp, isSecureRequest, originLabel, parseCookies, serializeCookie, sameOrigin } from './src/util.js';
 
 const PROJECT_ROOT = dirname(fileURLToPath(import.meta.url));
 
@@ -151,7 +151,8 @@ export function createApp(config) {
     const value = auth.deviceToken(credentials.secret, deviceId);
     const setCookie = serializeCookie('dev', value, {
       maxAge: settings.deviceDays * 86400,
-      sameSite: 'Lax'
+      sameSite: 'Lax',
+      secure: isSecureRequest(req)
     });
     return {
       deviceId,
@@ -278,7 +279,8 @@ export function createApp(config) {
       return redirect(res, safeBack(form.get('next'), '/'), {
         'Set-Cookie': serializeCookie('tk', auth.gateToken(credentials), {
           maxAge: settings.sessionDays * 86400,
-          sameSite: 'Lax'
+          sameSite: 'Lax',
+          secure: isSecureRequest(req)
         })
       });
     }
@@ -289,7 +291,8 @@ export function createApp(config) {
       return redirect(res, '/', {
         'Set-Cookie': serializeCookie('tk', auth.gateToken(credentials), {
           maxAge: settings.sessionDays * 86400,
-          sameSite: 'Lax'
+          sameSite: 'Lax',
+          secure: isSecureRequest(req)
         })
       });
     }
@@ -510,7 +513,8 @@ export function createApp(config) {
       return redirect(res, '/admin', {
         'Set-Cookie': serializeCookie('adm', auth.adminToken(credentials), {
           maxAge: settings.sessionDays * 86400,
-          sameSite: 'Lax'
+          sameSite: 'Lax',
+          secure: isSecureRequest(req)
         })
       });
     }
