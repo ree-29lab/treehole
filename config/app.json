@@ -19,14 +19,33 @@
     "reportPerMinute": 5,
     "gatePerMinute": 8,
     "postPerDay": 30,
-    "dailyPostCap": 500
+    "dailyPostCap": 500,
+    "anonPostsPerDay": 20
   },
   "moods": [
-    { "key": "情绪", "emoji": "🫧" },
-    { "key": "深夜", "emoji": "🌙" },
-    { "key": "提问", "emoji": "❓" },
-    { "key": "吐槽", "emoji": "🙃" },
-    { "key": "求助", "emoji": "🫂" },
-    { "key": "随便说说", "emoji": "🍃" }
+    {
+      "key": "情绪",
+      "emoji": "🫧"
+    },
+    {
+      "key": "深夜",
+      "emoji": "🌙"
+    },
+    {
+      "key": "提问",
+      "emoji": "❓"
+    },
+    {
+      "key": "吐槽",
+      "emoji": "🙃"
+    },
+    {
+      "key": "求助",
+      "emoji": "🫂"
+    },
+    {
+      "key": "随便说说",
+      "emoji": "🍃"
+    }
   ]
 }
