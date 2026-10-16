@@ -83,6 +83,9 @@ export function openDb(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
+  // 删除时把释放的页清零。默认关闭的话，删掉的内容还会以明文留在 .db 文件的空闲页里，
+  // 用文本搜索就能翻出来 —— 隐私页上写的「删了就没有了」要靠这一行才算数。
+  db.exec('PRAGMA secure_delete = ON');
   db.exec(SCHEMA);
   migrate(db);
   return db;
