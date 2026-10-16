@@ -241,3 +241,6 @@ footer p { margin: .3rem 0; }
   .flash.ok { background: #e9f2e6; }
   .flash.err { background: #f7e5e1; }
 }
+
+/* 自毁倒计时：让「这条会消失」一眼可见 */
+.meta .expiry { color: var(--accent); }
