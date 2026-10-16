@@ -8,7 +8,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 REPO="$(git config --get remote.origin.url 2>/dev/null | sed -E 's#.*github.com[:/]([^/]+/[^/.]+)(\.git)?#\1#')"
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-[ -n "$REPO" ] || { echo "读不到 origin 远程地址，先跑 bin/setup-pages.sh。"; exit 1; }
+[ -n "$REPO" ] || { echo "读不到 origin 远程地址，先跑 bin/setup.sh。"; exit 1; }
 
 files=("$@")
 if [ ${#files[@]} -eq 0 ]; then
