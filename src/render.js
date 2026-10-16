@@ -32,6 +32,7 @@ export function layout({ title, body, flash }) {
   <nav>
     <a href="/">广场</a>
     <a href="/rules">版规</a>
+    <a href="/privacy">隐私</a>
     <a href="/mine">我发过的</a>
   </nav>
 </header>
@@ -42,7 +43,7 @@ ${raw(body)}
 <footer>
   <p>这里说的话会被人看见，但不会记名。请不要写下任何能指认到具体人的信息。</p>
   <p>如果此刻很难受：<strong>${HOTLINE}</strong> 全国统一心理援助热线（24 小时，免费）。</p>
-  <p class="dim">本站不记录 IP、不做访问统计、不投放任何第三方脚本。</p>
+  <p class="dim">本站不记录 IP、不做访问统计、不投放任何第三方脚本。<a href="/privacy">隐私说明</a></p>
 </footer>
 <script src="/public/app.js" defer></script>
 </body>
@@ -55,10 +56,22 @@ function moodChip(mood, moods) {
   return found ? html`<span class="mood">${found.emoji} ${found.key}</span>` : html`<span class="mood">${mood}</span>`;
 }
 
-function metaLine({ code, createdAt, now, moods, mood, extra }) {
+/** 「还有 3 天消失」——把自毁时间说清楚，写的人才安心。 */
+export function expiryLabel(expiresAt, now) {
+  if (!expiresAt) return '';
+  const left = expiresAt - now;
+  if (left <= 0) return '正在消失';
+  const days = Math.ceil(left / 86400000);
+  if (days > 1) return `还有 ${days} 天消失`;
+  const hours = Math.ceil(left / 3600000);
+  return hours > 1 ? `还有 ${hours} 小时消失` : '马上消失';
+}
+
+function metaLine({ code, createdAt, now, moods, mood, extra, expiresAt }) {
+  const expiry = expiryLabel(expiresAt, now);
   return html`<div class="meta">
   <span class="code">${code}</span>
-  <span class="sep">·</span><span class="time">${timeAgo(createdAt, now)}</span>${mood ? moodChip(mood, moods) : ''}${extra ? html`<span class="sep">·</span><span class="time">${extra}</span>` : ''}
+  <span class="sep">·</span><span class="time">${timeAgo(createdAt, now)}</span>${mood ? moodChip(mood, moods) : ''}${expiry ? html`<span class="expiry">⏳ ${expiry}</span>` : ''}${extra ? html`<span class="sep">·</span><span class="time">${extra}</span>` : ''}
 </div>`;
 }
 
@@ -155,7 +168,7 @@ function postCard(ctx, post) {
   const preview = ctx.previewComments.get(post.id) ?? [];
   const rest = Math.max(0, post.reply_count - preview.length);
   return html`<article class="card" id="p${post.id}">
-  ${metaLine({ code: post.code, createdAt: post.created_at, now: ctx.now, moods: ctx.moods, mood: post.mood })}
+  ${metaLine({ code: post.code, createdAt: post.created_at, now: ctx.now, moods: ctx.moods, mood: post.mood, expiresAt: post.expires_at })}
   ${bodyBlock(post.body, post.folded === 1)}
   <div class="actions">
     ${hugForm(ctx, { targetType: 'post', targetId: post.id, count: post.hug_count, hugged: ctx.huggedPosts.has(post.id) })}
@@ -190,7 +203,7 @@ export function gatePage({ error }) {
   });
 }
 
-export function feedPage({ ctx, posts, moods, mood, flash, error, draft, hasMore }) {
+export function feedPage({ ctx, posts, moods, mood, flash, error, draft, hasMore, expireDays }) {
   return layout({
     title: '广场',
     flash,
@@ -207,6 +220,9 @@ export function feedPage({ ctx, posts, moods, mood, flash, error, draft, hasMore
           )
           .join('')
       )}
+      <label class="chip expire-chip" title="勾上之后，这条和它下面的回应会一起在到点时被真删掉">
+        <input type="checkbox" name="expire" value="1"><span>⏳ ${expireDays} 天后自动消失</span>
+      </label>
       <button class="submit" type="submit">放进树洞</button>
     </div>
   </form>
@@ -232,7 +248,7 @@ export function postPage({ ctx, post, comments, flash, draft }) {
     flash,
     body: html`<p class="back"><a href="/">← 回广场</a></p>
 <article class="card single" id="p${post.id}">
-  ${metaLine({ code: post.code, createdAt: post.created_at, now: ctx.now, moods: ctx.moods, mood: post.mood })}
+  ${metaLine({ code: post.code, createdAt: post.created_at, now: ctx.now, moods: ctx.moods, mood: post.mood, expiresAt: post.expires_at })}
   ${bodyBlock(post.body, post.folded === 1)}
   <div class="actions">
     ${hugForm(ctx, { targetType: 'post', targetId: post.id, count: post.hug_count, hugged: ctx.huggedPosts.has(post.id) })}
@@ -262,7 +278,7 @@ export function minePage({ ctx, posts, flash }) {
   const rows = posts
     .map(
       (post) => html`<article class="card">
-  ${metaLine({ code: post.code, createdAt: post.created_at, now: ctx.now, moods: ctx.moods, mood: post.mood, extra: `回应 ${post.reply_count}` })}
+  ${metaLine({ code: post.code, createdAt: post.created_at, now: ctx.now, moods: ctx.moods, mood: post.mood, extra: `回应 ${post.reply_count}`, expiresAt: post.expires_at })}
   <div class="body">${textBlock(post.body)}</div>
   <div class="actions">
     <a class="count" href="/p/${post.id}">打开</a>
@@ -284,6 +300,53 @@ export function minePage({ ctx, posts, flash }) {
 <p class="dim">这份列表只存在你这台设备的浏览器里。换设备或清掉浏览器数据，就找不回来了。</p>
 <section class="feed">
 ${raw(rows || '<p class="empty">你还没发过什么。</p>')}
+</section>`
+  });
+}
+
+export function privacyPage({ expireDays }) {
+  return layout({
+    title: '隐私说明',
+    body: html`<h1 class="page">隐私说明</h1>
+<section class="prose">
+  <p>写之前你可能想知道：这个地方记了什么、没记什么。</p>
+
+  <h2>不记的</h2>
+  <ul>
+    <li><strong>不知道你是谁。</strong>没有账号、没有昵称、不用手机号或邮箱，也不需要登录。</li>
+    <li><strong>不记 IP 地址。</strong>只在后台存一个还原不回来的乱码，用来防刷屏，7 天后自动清掉。</li>
+    <li><strong>不看你的设备。</strong>你的浏览器那边只有一个随机串，换浏览器或清掉缓存就换了一个人。</li>
+    <li><strong>不做统计、不放广告、不装任何第三方的东西。</strong>页面上没有一个外部链接，你的访问不会被别人看到。</li>
+    <li><strong>不会被搜索引擎搜到。</strong>所有页面都标了不给收录。</li>
+    <li><strong>发在哪条帖子里，就只在那条帖子里。</strong>同一条帖子里的发言能看出是同一个人；换一条帖子，代号就换了，对不上。</li>
+  </ul>
+
+  <h2>记的</h2>
+  <ul>
+    <li>你写的内容本身，和大致时间（页面上只显示「3 小时前」，不显示具体几点几分）。</li>
+  </ul>
+
+  <h2>谁能看到</h2>
+  <ul>
+    <li>拿到口令的人都能看到你写的东西，也都能回应。</li>
+    <li><strong>开这个树洞的人（站长）能看到全部内容</strong>——内容就存在他自己电脑的一个文件里。他看不到你是谁、从哪来，但他能看到你写了什么。这一点我不骗你。</li>
+    <li>你没有勾「${expireDays} 天后自动消失」的话，内容会一直留着，直到你自己删。</li>
+  </ul>
+
+  <h2>你自己能做的</h2>
+  <ul>
+    <li><strong>随时删掉自己写的</strong>：在「我发过的」里点删除，帖子连它下面的回应一起从数据库里消失，不留痕迹。</li>
+    <li><strong>让它自己消失</strong>：发的时候勾上「⏳ N 天后自动消失」，到点连回应一起真删。</li>
+    <li><strong>被冒犯就举报</strong>：三条举报会自动折叠，站长会人工看。</li>
+  </ul>
+
+  <h2>唯一挡不住的</h2>
+  <p>你自己写出来的信息——真名、班级、住址、聊天记录截图、能被认出来的事。技术拦不住这个，请自己别写。</p>
+
+  <h2>还有一句实话</h2>
+  <p>网上没有绝对安全的地方。这里能保证的是"少记、不追人、能删"，不是"查不到"。如果一件事连一点点被猜到的风险都不能承担，就别写在这里。</p>
+
+  <p>难受的时候可以打 <strong>${HOTLINE}</strong>（全国统一心理援助热线，24 小时）。</p>
 </section>`
   });
 }
