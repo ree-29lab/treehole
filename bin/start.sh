@@ -124,7 +124,7 @@ if gh auth status >/dev/null 2>&1 && gh repo view "$PAGES_REPO" >/dev/null 2>&1;
     echo "入口页更新失败（不影响本机使用，检查 gh 登录）"
   fi
 else
-  echo "还没有入口页仓库，先跑一次 bin/setup-pages.sh 就能拿到固定链接。"
+  echo "还没有入口页仓库，先跑一次 bin/setup.sh 就能拿到固定链接。"
 fi
 
 # ---------- 4. 交钥匙 ----------
