@@ -31,17 +31,13 @@ is_up() {
   curl -sf "${LOCAL_URL}/healthz" >/dev/null 2>&1
 }
 
-# 把当前隧道地址写进入口页仓库的 docs/now.json，访客打开固定链接就能被带过来。
+# 入口页的状态（当前隧道地址）放在一个 secret gist 里。
+# 走 api.github.com，比 git push 稳（git 到 github.com:443 在国内经常连不上）。
+# 换 gist 时这里和 docs/index.html 里的 NOW_URL 要一起改。
+NOW_GIST_ID="${TREEHOLE_GIST_ID:-4f04245b3bf4abc77914dd26da2ba8cf}"
+
 publish_now_json() {
-  local url="$1" online="$2" sha json payload
+  local url="$1" online="$2" json
   json="$(printf '{"url":"%s","online":%s,"updatedAt":"%s"}' "$url" "$online" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
-  payload="$(printf '%s' "$json" | base64 | tr -d '\n')"
-  sha="$(gh api "repos/${PAGES_REPO}/contents/docs/now.json" --jq .sha 2>/dev/null || true)"
-  if [ -n "$sha" ]; then
-    gh api -X PUT "repos/${PAGES_REPO}/contents/docs/now.json" \
-      -f message="tunnel ${online}" -f content="$payload" -f sha="$sha" -f branch=main >/dev/null
-  else
-    gh api -X PUT "repos/${PAGES_REPO}/contents/docs/now.json" \
-      -f message="tunnel ${online}" -f content="$payload" -f branch=main >/dev/null
-  fi
+  gh api -X PATCH "gists/${NOW_GIST_ID}" -f "files[now.json][content]=${json}" >/dev/null
 }
