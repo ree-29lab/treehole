@@ -25,6 +25,22 @@ export function charLength(text) {
   return Array.from(text).length;
 }
 
+/**
+ * Fold a passphrase down to a comparable form.
+ *
+ * People type these on phones: Chinese IMEs emit full-width punctuation, chat apps
+ * turn "-" into "–" or "—" when a message is copied, and keyboards leave a trailing
+ * space. None of that should lock someone out of a friends-only board.
+ */
+export function normalizePhrase(value) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
+    .replace(/[\u00ad\u200b-\u200f\u2028\u2029\u202f\u205f\u3000\ufeff]/g, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
 /** @returns {{why: string}|null} the first blocked pattern that matches */
 export function findBlocked(text, patterns) {
   for (const pattern of patterns) {
