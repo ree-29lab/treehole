@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ree.treehole-backup</string>
+
+  <!-- 每天 04:30 备份一次树洞数据库；scripts/backup.mjs 只保留最近 7 份。
+       隐私说明页里写的「备份最多留 7 份」就是靠这里成立的。 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/Users/renyuqiao/treehole/scripts/backup.mjs</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/renyuqiao/treehole</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>4</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/renyuqiao/treehole/logs/backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/renyuqiao/treehole/logs/backup.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
