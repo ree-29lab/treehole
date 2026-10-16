@@ -83,3 +83,22 @@ export function displayCode(words, deviceHash, postId) {
   const c = parseInt(digest.slice(16, 20), 16);
   return `${words.prefix[a % words.prefix.length]}${words.suffix[b % words.suffix.length]}·${String(c % 100).padStart(2, '0')}`;
 }
+
+/**
+ * 无痕帖的凭据。
+ *
+ * 发无痕帖时服务端生成一个随机 token，只把它的 HMAC 存进数据库（伪装成 device_hash，
+ * 前缀是 `anon:`，和真实设备哈希区分开），token 原文只交给发帖人自己的浏览器。
+ * 于是：数据库里查不出这条属于哪台设备；而拿着 token 的那个浏览器仍然能删掉它。
+ */
+export function newAnonToken() {
+  return randomBytes(16).toString('hex');
+}
+
+export function anonHash(secret, token) {
+  return `anon:${sign(secret, `anon:${token}`).slice(0, 16)}`;
+}
+
+export function isAnonHash(value) {
+  return typeof value === 'string' && value.startsWith('anon:');
+}
