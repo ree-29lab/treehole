@@ -5,6 +5,8 @@
   "sessionDays": 30,
   "deviceDays": 365,
   "reportHideThreshold": 3,
+  "expireDays": 7,
+  "sweepMinutes": 5,
   "postMaxChars": 1000,
   "commentMaxChars": 500,
   "bodyLimitBytes": 16384,
