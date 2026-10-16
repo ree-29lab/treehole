@@ -112,6 +112,28 @@ test('口令错误被拒，正确就种下通行 cookie', async () => {
   assert.match(await feed.text(), /放进树洞/);
 });
 
+test('口令容错：多空格、全角横线、少打横线都放行，真写错才拦', async () => {
+  const variants = [
+    ` ${PASSPHRASE} `,
+    '核桃－星轨－41',
+    '核桃–星轨–41',
+    '核桃—星轨—41',
+    '核桃星轨41',
+    '核桃 - 星轨 - 41'
+  ];
+  for (const variant of variants) {
+    const visitor = client();
+    const response = await visitor.post('/gate', { passphrase: variant });
+    assert.equal(response.headers.get('location'), '/', `「${variant}」应该能进`);
+    assert.ok(visitor.jar.get('tk'));
+  }
+
+  const wrong = client();
+  const bad = await wrong.post('/gate', { passphrase: '核桃-星轨-42' });
+  assert.equal(bad.headers.get('location'), '/gate?err=1', '写错数字还是应该被拦');
+  assert.equal(wrong.jar.get('tk'), undefined);
+});
+
 test('带口令的分享链接可以直接进站', async () => {
   const visitor = client();
   const response = await visitor.get(`/?k=${encodeURIComponent(PASSPHRASE)}`);
