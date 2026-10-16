@@ -15,17 +15,21 @@
 ## 快速开始
 
 ```bash
+bin/setup.sh              # 一次性：生成口令、建状态 gist、建仓库、开 Pages
 bin/start.sh              # 起本机服务 + 公网隧道，并更新入口页
-bin/start.sh --no-tunnel  # 只在本机跑
+bin/status.sh             # 看状态、当前地址、分享链接、两个口令
+bin/restart.sh            # 只重启本体（地址不变），改完配置用它
 bin/stop.sh               # 全部停掉，并把入口页标记成没开门
 ```
 
 首次运行会在 `data/secret.json` 里生成三个值：`secret`（签名密钥）、`passphrase`（访客口令）、
 `adminPassphrase`（后台口令）。终端会打印口令和分享链接。
 
+**维护、排错、给别人也搭一个，看 [`操作手册.md`](操作手册.md)。**
+
 ## 让别人也能打开
 
-1. `bin/setup-pages.sh`（只需一次）——建 GitHub 仓库、推代码、开启 GitHub Pages。
+1. `bin/setup.sh`（只需一次）——生成口令、建状态 gist、建 GitHub 仓库、推代码、开启 GitHub Pages。
 2. `bin/start.sh`——起隧道，并把当前公网地址写进一个 secret gist（入口页读它，见下）。
 3. 把终端打印的分享链接整条发给朋友：
 
@@ -93,9 +97,10 @@ src/filter.js            文本规范化、字数、关键词判定
 src/render.js            服务端 HTML 渲染（唯一出口，默认转义）
 src/util.js              转义、cookie、相对时间、客户端 IP
 public/                  样式与渐进增强脚本（无框架、无外部资源）
-config/                  app.json / keywords.json / words.json / seed-posts.json
+config/                  app.json / keywords.json / words.json / seed-posts.json / entry.json
 scripts/                 seed.mjs / backup.mjs
-bin/                     start.sh / stop.sh / setup-pages.sh / push-via-api.sh / _common.sh
+bin/                     setup.sh / start.sh / stop.sh / restart.sh / status.sh / push-via-api.sh / _common.sh
+操作手册.md              维护、排错、7×24、给别人也搭一个
 docs/                    GitHub Pages 入口页（index.html 固定不变，状态在 gist 里）
 test/                    端到端测试
 data/                    运行时生成：数据库、密钥、pid、日志（已 gitignore，内含口令，别提交）
