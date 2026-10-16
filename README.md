@@ -26,7 +26,7 @@ bin/stop.sh               # 全部停掉，并把入口页标记成没开门
 ## 让别人也能打开
 
 1. `bin/setup-pages.sh`（只需一次）——建 GitHub 仓库、推代码、开启 GitHub Pages。
-2. `bin/start.sh`——起隧道并把当前公网地址写进入口页的 `docs/now.json`。
+2. `bin/start.sh`——起隧道，并把当前公网地址写进一个 secret gist（入口页读它，见下）。
 3. 把终端打印的分享链接整条发给朋友：
 
    ```
@@ -37,6 +37,12 @@ bin/stop.sh               # 全部停掉，并把入口页标记成没开门
    浏览器读到之后自动拼成 `?k=口令` 完成验证。
 
 入口页地址固定不变；隧道地址每次重启都会变，入口页会自动跟过去——所以**让对方收藏入口页，而不是隧道地址**。
+
+`docs/index.html` 是入口页（GitHub Pages 托管），它从
+`gist.githubusercontent.com/<用户名>/<gist-id>/raw/now.json` 读当前隧道地址。
+gist 里的内容由 `bin/start.sh` / `bin/stop.sh` 通过 `gh api` 更新——走 `api.github.com`，
+比 `git push` 稳（国内直连 github.com:443 经常超时）。
+换 gist 时要同时改 `bin/_common.sh` 的 `NOW_GIST_ID` 和 `docs/index.html` 里的 `NOW_URL`。
 
 ## 常用改动
 
@@ -62,6 +68,8 @@ bin/stop.sh               # 全部停掉，并把入口页标记成没开门
 - 全部数据在 `data/treehole.db`（SQLite，WAL 模式）。
 - 数据库里**不存原设备 ID、不存原始 IP**：两者都只保存 HMAC 摘要。IP 摘要仅用于限流，7 天内自动清理。
 - 页面不显示精确时间（只显示「3 小时前」这类相对时间）、不做搜索、不引任何第三方脚本或 CDN。
+- 入口页的 gist 是「secret」而不是私密：知道 gist 地址的人能读到当前隧道地址。
+  也就是说**隧道地址本身算公开信息**，真正拦人的是口令，别把口令发到公开群里。
 - 备份：`node scripts/backup.mjs` 会写出 `data/backup-YYYY-MM-DD.db`，只保留最近 7 份。
   想每天自动跑，可以挂一个 launchd / cron。
 - 想彻底清空：停服务后删掉 `data/treehole.db*` 即可。
@@ -87,8 +95,8 @@ src/util.js              转义、cookie、相对时间、客户端 IP
 public/                  样式与渐进增强脚本（无框架、无外部资源）
 config/                  app.json / keywords.json / words.json / seed-posts.json
 scripts/                 seed.mjs / backup.mjs
-bin/                     start.sh / stop.sh / setup-pages.sh / _common.sh
-docs/                    GitHub Pages 入口页
+bin/                     start.sh / stop.sh / setup-pages.sh / push-via-api.sh / _common.sh
+docs/                    GitHub Pages 入口页（index.html 固定不变，状态在 gist 里）
 test/                    端到端测试
 data/                    运行时生成：数据库、密钥、pid、日志（已 gitignore，内含口令，别提交）
 ```
@@ -116,6 +124,9 @@ data/                    运行时生成：数据库、密钥、pid、日志（�
    实际执法主要针对有规模的平台，但一旦站内出现违法内容被举报，**站长是第一责任人**。
    部署前请自行评估这一点。
 6. **没有通知推送**：没有账号体系就做不到「有人回你了」的提醒；作者只能在「我发过的」里看回应数。
+7. **git push 在这台机器上不稳**：国内直连 `github.com:443` 经常超时（`api.github.com` 却一直通）。
+   改完代码要同步到 GitHub 时，先试 `git push`；连不上就用 `bin/push-via-api.sh`——
+   它通过 Contents API 把工作区的文件直接写进仓库，功能等价于一次提交。
 
 ## 许可
 
