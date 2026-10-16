@@ -161,3 +161,17 @@ export function originLabel(req) {
   return `origin=${origin ? describe(origin) : '(无)'} referer=${referer ? describe(referer) : '(无)'} host=${req.headers.host ?? '(无)'}`;
 }
 
+/** True when the visitor reached us over HTTPS (through the Cloudflare tunnel). */
+export function isSecureRequest(req) {
+  const proto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim().toLowerCase();
+  if (proto) return proto === 'https';
+  const cfVisitor = req.headers['cf-visitor'];
+  if (cfVisitor) {
+    try {
+      return JSON.parse(String(cfVisitor)).scheme === 'https';
+    } catch {
+      return String(cfVisitor).includes('https');
+    }
+  }
+  return false;
+}
