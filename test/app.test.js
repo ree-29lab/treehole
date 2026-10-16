@@ -430,3 +430,59 @@ test('过完访客门禁也拿不到后台，除非再输后台口令', async ()
   const exportDenied = await visitor.get('/admin/export');
   assert.equal(exportDenied.status, 403, '没登录后台就拿不到导出');
 });
+
+test('勾了「自动消失」的帖子会带上倒计时，到点后连回应一起真删', async () => {
+  const author = client();
+  await author.enter();
+  const nonce = await author.nonce('/');
+  const posted = await author.post('/post', {
+    nonce,
+    body: '这条是勾了自毁的。',
+    mood: '',
+    expire: '1'
+  });
+  assert.equal(posted.status, 302);
+  const postId = Number(posted.headers.get('location').match(/#p(\d+)/)[1]);
+
+  // 列表和详情页都能看到倒计时，作者自己的列表也看得到
+  assert.match(await (await author.get('/')).text(), /还有 \d+ 天消失/);
+  assert.match(await (await author.get(`/p/${postId}`)).text(), /还有 \d+ 天消失/);
+
+  const row = started.app.database.prepare('SELECT expires_at FROM posts WHERE id = ?').get(postId);
+  assert.ok(row.expires_at > Date.now(), 'expires_at 应该是未来时间');
+
+  // 没勾的帖子不应该有倒计时（换个 IP，免得撞上「一分钟一条」的限流）
+  const other = client();
+  await other.enter();
+  const plain = await other.nonce('/');
+  const plainPosted = await other.post('/post', { nonce: plain, body: '这条不勾自毁。', mood: '' });
+  const plainId = Number(plainPosted.headers.get('location').match(/#p(\d+)/)[1]);
+  const plainRow = started.app.database.prepare('SELECT expires_at FROM posts WHERE id = ?').get(plainId);
+  assert.equal(plainRow.expires_at, null);
+
+  // 现在把时间拨到过去：列表立刻看不到、详情页 404
+  started.app.database
+    .prepare('UPDATE posts SET expires_at = ? WHERE id = ?')
+    .run(Date.now() - 1000, postId);
+  const feed = await (await author.get('/')).text();
+  assert.ok(!feed.includes('这条是勾了自毁的。'), '过期后不该再出现在广场');
+  assert.equal((await author.get(`/p/${postId}`)).status, 404);
+
+  // 清扫之后，数据库里那一行也真的没了
+  const removed = started.app.purgeExpired();
+  assert.ok(removed.includes(postId), '清扫应该包括这条');
+  const left = started.app.database.prepare('SELECT COUNT(*) AS n FROM posts WHERE id = ?').get(postId);
+  assert.equal(Number(left.n), 0, '到点自毁是真删，不是标记');
+});
+
+test('隐私说明页能打开，并且把「站长能看到内容」写明白了', async () => {
+  const visitor = client();
+  await visitor.enter();
+  const page = await visitor.get('/privacy');
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, /不记 IP 地址/);
+  assert.match(html, /站长）能看到全部内容/);
+  assert.match(html, /随时删掉自己写的/);
+  assert.match(html, /12356/);
+});
