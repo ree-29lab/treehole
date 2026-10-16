@@ -243,7 +243,16 @@ export function createApp(config) {
     // ---- 口令门禁 ----
     if (path === '/gate' && req.method === 'GET') {
       if (gateAuthed(cookies)) return redirect(res, '/');
-      return sendHtml(res, 200, views.gatePage({ error: url.searchParams.get('err') === '1' ? '口令不对。' : null }));
+      const failed = url.searchParams.get('err') === '1';
+      return sendHtml(
+        res,
+        200,
+        views.gatePage({
+          error: failed
+            ? '口令不对。照着发给你的人那串字一个一个对：有没有少字、多空格、或者中间那两条短横线变成了别的符号。直接点别人发的那条链接最省事。'
+            : null
+        })
+      );
     }
 
     if (path === '/gate' && req.method === 'POST') {
@@ -251,7 +260,7 @@ export function createApp(config) {
         return errorResponse(res, 429, '试得太快了，等一分钟再来。');
       }
       const form = await readForm(req);
-      if (!auth.safeEqual(form.get('passphrase') ?? '', credentials.passphrase)) {
+      if (!auth.phraseMatches(form.get('passphrase'), credentials.passphrase)) {
         return redirect(res, '/gate?err=1');
       }
       return redirect(res, safeBack(form.get('next'), '/'), {
@@ -264,7 +273,7 @@ export function createApp(config) {
 
     // 带口令的分享链接：/?k=口令
     const linkKey = url.searchParams.get('k');
-    if (linkKey !== null && auth.safeEqual(linkKey, credentials.passphrase)) {
+    if (linkKey !== null && auth.phraseMatches(linkKey, credentials.passphrase)) {
       return redirect(res, '/', {
         'Set-Cookie': serializeCookie('tk', auth.gateToken(credentials), {
           maxAge: settings.sessionDays * 86400,
@@ -471,7 +480,7 @@ export function createApp(config) {
         return errorResponse(res, 429, '试得太快了。');
       }
       const form = await readForm(req);
-      if (!auth.safeEqual(form.get('passphrase') ?? '', credentials.adminPassphrase)) {
+      if (!auth.phraseMatches(form.get('passphrase'), credentials.adminPassphrase)) {
         return sendHtml(res, 401, views.adminLoginPage({ error: '管理员口令不对。' }));
       }
       return redirect(res, '/admin', {
