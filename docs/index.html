@@ -39,6 +39,10 @@
 </div>
 <script>
 (function () {
+  // 当前隧道地址放在一个 secret gist 里，由 bin/start.sh / bin/stop.sh 自动更新。
+  // 换 gist 时这里和 bin/_common.sh 的 NOW_GIST_ID 要一起改。
+  var NOW_URL = 'https://gist.githubusercontent.com/ree-29lab/4f04245b3bf4abc77914dd26da2ba8cf/raw/now.json';
+
   var state = document.getElementById('state');
   var hint = document.getElementById('hint');
   var go = document.getElementById('go');
@@ -49,7 +53,7 @@
     if (extra) { hint.textContent = extra; hint.style.display = 'block'; }
   }
 
-  fetch('./now.json?t=' + Date.now(), { cache: 'no-store' })
+  fetch(NOW_URL + '?t=' + Date.now(), { cache: 'no-store' })
     .then(function (response) { return response.json(); })
     .then(function (info) {
       if (!info || !info.online || !info.url) {
