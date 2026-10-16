@@ -143,6 +143,20 @@ export function createComment(db, { postId, parentId, body, code, deviceHash, cr
 }
 
 /** @returns the post, or null when it does not exist or its self-destruct time has passed. */
+/** Posts claimable by a set of incognito token hashes, newest first. */
+export function postsByOwnerHashes(db, hashes, now = Date.now()) {
+  if (hashes.length === 0) return [];
+  const placeholders = hashes.map(() => '?').join(',');
+  return db
+    .prepare(
+      `SELECT * FROM posts
+        WHERE device_hash IN (${placeholders}) AND deleted_at IS NULL
+          AND (expires_at IS NULL OR expires_at > ?)
+        ORDER BY id DESC`
+    )
+    .all(...hashes, now);
+}
+
 export function getPost(db, id, now = Date.now()) {
   const row = db.prepare('SELECT * FROM posts WHERE id = ?').get(id) ?? null;
   if (!row) return null;
@@ -271,11 +285,16 @@ export function addReport(db, { targetType, targetId, reason, deviceHash, now, t
   return { count, hidden, added: true };
 }
 
-/** Author deletion: the row and its text are really removed. */
-export function deleteOwn(db, { targetType, targetId, deviceHash }) {
+/**
+ * Author deletion: the row and its text are really removed.
+ * `ownerHashes` holds every identity that may delete this row — in practice either the
+ * device hash (normal posts) or the incognito token hash (无痕帖).
+ */
+export function deleteOwn(db, { targetType, targetId, ownerHashes, deviceHash }) {
   const table = tableFor(targetType);
+  const allowed = ownerHashes ?? [deviceHash];
   const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(targetId);
-  if (!row || row.device_hash !== deviceHash) return false;
+  if (!row || !allowed.includes(row.device_hash)) return false;
   if (targetType === 'post') {
     db.prepare('DELETE FROM comments WHERE post_id = ?').run(targetId);
     db.prepare('DELETE FROM posts WHERE id = ?').run(targetId);
