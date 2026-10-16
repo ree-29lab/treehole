@@ -75,11 +75,17 @@ gist 里的内容由 `bin/start.sh` / `bin/stop.sh` 通过 `gh api` 更新——
 - 全部数据在 `data/treehole.db`（SQLite，WAL 模式）。
 - 数据库里**不存原设备 ID、不存原始 IP**：两者都只保存 HMAC 摘要。IP 摘要仅用于限流，7 天内自动清理。
 - 页面不显示精确时间（只显示「3 小时前」这类相对时间）、不做搜索、不引任何第三方脚本或 CDN。
+- **删除是磁盘级的**：连接开了 `PRAGMA secure_delete = ON`，删掉的行会随释放页清零，不会以明文留在 `.db` 里。
+  （默认关闭时，`DELETE` 之后用文本搜索仍能在文件里翻出原文——这是本项目实测过的行为。）
+- cookie 只三个（通行证 / 设备编号 / 后台通行证），都是 `HttpOnly`；**走 HTTPS 时自动带 `Secure`**（本机 http 调试不带，否则登不上）。
+  不使用 `localStorage`。
 - 入口页的 gist 是「secret」而不是私密：知道 gist 地址的人能读到当前隧道地址。
   也就是说**隧道地址本身算公开信息**，真正拦人的是口令，别把口令发到公开群里。
-- 备份：`node scripts/backup.mjs` 会写出 `data/backup-YYYY-MM-DD.db`，只保留最近 7 份。
-  想每天自动跑，可以挂一个 launchd / cron。
-- 想彻底清空：停服务后删掉 `data/treehole.db*` 即可。
+- 备份：`node scripts/backup.mjs` 写出 `data/backup-YYYY-MM-DD.db`，只保留最近 7 份；
+  仓库里带了 `launchd/com.ree.treehole-backup.plist`，装好后每天 04:30 自动跑。
+  **隐私页承诺的「删除的内容最迟 7 天内从所有备份里消失」依赖这条**——关掉它就要改那句话。
+- 站内 `/privacy` 是写给访客看的版本。**改那一页等于改对外承诺**，动手前先想清楚。
+- 想彻底清空：停服务后删掉 `data/treehole.db*` 与 `data/backup-*.db` 即可。
 
 ## 测试
 
@@ -104,6 +110,7 @@ public/                  样式与渐进增强脚本（无框架、无外部资�
 config/                  app.json / keywords.json / words.json / seed-posts.json / entry.json
 scripts/                 seed.mjs / backup.mjs
 bin/                     setup.sh / start.sh / stop.sh / restart.sh / status.sh / push-via-api.sh / _common.sh
+launchd/                 每日备份的 LaunchAgent 模板（装到 ~/Library/LaunchAgents）
 操作手册.md              维护、排错、7×24、给别人也搭一个
 docs/                    GitHub Pages 入口页（index.html 固定不变，状态在 gist 里）
 test/                    端到端测试
