@@ -41,10 +41,11 @@
 (function () {
   // 当前隧道地址放在一个 secret gist 里，由 bin/start.sh / bin/stop.sh 自动更新。
   // 优先走 api.github.com（内容永远是最新的），失败再退回 CDN 直链（可能有点旧）。
-  // 换 gist 时这里和 bin/_common.sh 的 NOW_GIST_ID 要一起改。
+  // 下面两行由 bin/setup.sh 自动改写，别手改。
   var GIST_ID = '4f04245b3bf4abc77914dd26da2ba8cf';
+  var GIST_OWNER = 'ree-29lab';
   var NOW_API = 'https://api.github.com/gists/' + GIST_ID;
-  var NOW_RAW = 'https://gist.githubusercontent.com/ree-29lab/' + GIST_ID + '/raw/now.json';
+  var NOW_RAW = 'https://gist.githubusercontent.com/' + GIST_OWNER + '/' + GIST_ID + '/raw/now.json';
 
   var state = document.getElementById('state');
   var hint = document.getElementById('hint');
