@@ -1,0 +1,14 @@
+{
+  "name": "treehole",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Anonymous message board with replies, passphrase gate and moderation tools. Zero dependencies.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
+}

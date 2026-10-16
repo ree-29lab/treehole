@@ -1,0 +1,30 @@
+{
+  "host": "127.0.0.1",
+  "port": 8787,
+  "pageSize": 30,
+  "sessionDays": 30,
+  "deviceDays": 365,
+  "reportHideThreshold": 3,
+  "postMaxChars": 1000,
+  "commentMaxChars": 500,
+  "bodyLimitBytes": 16384,
+  "limits": {
+    "postPerMinute": 1,
+    "postAttemptsPerMinute": 20,
+    "replyPerMinute": 5,
+    "replyAttemptsPerMinute": 30,
+    "hugPerMinute": 20,
+    "reportPerMinute": 5,
+    "gatePerMinute": 8,
+    "postPerDay": 30,
+    "dailyPostCap": 500
+  },
+  "moods": [
+    { "key": "情绪", "emoji": "🫧" },
+    { "key": "深夜", "emoji": "🌙" },
+    { "key": "提问", "emoji": "❓" },
+    { "key": "吐槽", "emoji": "🙃" },
+    { "key": "求助", "emoji": "🫂" },
+    { "key": "随便说说", "emoji": "🍃" }
+  ]
+}
