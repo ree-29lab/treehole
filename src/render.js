@@ -6,6 +6,7 @@
  *   { now, moods, back, issueNonce, huggedPosts:Set, huggedComments:Set, previewComments:Map }
  */
 
+import { isAnonHash } from './auth.js';
 import { html, raw, textBlock, timeAgo } from './util.js';
 
 export const HOTLINE = '12356';
@@ -70,9 +71,30 @@ export function expiryLabel(expiresAt, now) {
 function metaLine({ code, createdAt, now, moods, mood, extra, expiresAt }) {
   const expiry = expiryLabel(expiresAt, now);
   return html`<div class="meta">
-  <span class="code">${code}</span>
+  <span class="code${code === '***' ? ' anon' : ''}"${code === '***' ? html` title="无痕帖：查不出是谁发的"` : ''}>${code}</span>
   <span class="sep">·</span><span class="time">${timeAgo(createdAt, now)}</span>${mood ? moodChip(mood, moods) : ''}${expiry ? html`<span class="expiry">⏳ ${expiry}</span>` : ''}${extra ? html`<span class="sep">·</span><span class="time">${extra}</span>` : ''}
 </div>`;
+}
+
+/**
+ * 删除按钮。
+ * - 自己设备发的：直接渲染出来，点了就走设备身份。
+ * - 无痕帖：数据库里没有设备指纹可对，所以按钮先藏着，由浏览器用本机存的凭据
+ *   （localStorage）决定是否显示，并在提交时把凭据填进 anon_token。
+ * - 别人的：什么都不渲染。
+ */
+function deleteForm(ctx, { targetType, targetId, ownerHash, back, postId, confirmText }) {
+  const mine = ownerHash === ctx.deviceHash;
+  const anon = isAnonHash(ownerHash);
+  if (!mine && !anon) return '';
+  return html`<form class="inline${anon ? ' anon-delete' : ''}" method="post" action="/delete" data-confirm="${confirmText}"${anon ? html` hidden data-anon-delete data-anon-post="${postId}"` : ''}>
+  ${nonceField(ctx)}
+  <input type="hidden" name="anon_token" value="">
+  <input type="hidden" name="target_type" value="${targetType}">
+  <input type="hidden" name="target_id" value="${targetId}">
+  <input type="hidden" name="back" value="${back}">
+  <button class="danger own" type="submit">删除</button>
+</form>`;
 }
 
 function reportForm(ctx, { targetType, targetId }) {
@@ -114,8 +136,9 @@ function bodyBlock(text, folded) {
 }
 
 export function replyForm(ctx, { postId, parentId, placeholder, draft = '' }) {
-  return html`<form class="reply" method="post" action="/c/${postId}">
+  return html`<form class="reply" method="post" action="/c/${postId}" data-anon-for="${postId}">
   ${nonceField(ctx)}
+  <input type="hidden" name="anon_token" value="">
   <input type="hidden" name="parent_id" value="${parentId ?? ''}">
   <textarea name="body" rows="3" maxlength="500" placeholder="${placeholder}" data-counter>${draft}</textarea>
   <button type="submit">发出去</button>
@@ -132,15 +155,14 @@ function commentNode(ctx, comment, children) {
       <summary>回应</summary>
       ${replyForm(ctx, { postId: comment.post_id, parentId: comment.id, placeholder: '回应这条…' })}
     </details>
-    ${comment.device_hash === ctx.deviceHash
-      ? html`<form class="inline" method="post" action="/delete" data-confirm="删掉就真的没了，确定吗？">
-      ${nonceField(ctx)}
-      <input type="hidden" name="target_type" value="comment">
-      <input type="hidden" name="target_id" value="${comment.id}">
-      <input type="hidden" name="back" value="${ctx.back}">
-      <button class="danger own" type="submit">删除</button>
-    </form>`
-      : ''}
+    ${deleteForm(ctx, {
+      targetType: 'comment',
+      targetId: comment.id,
+      ownerHash: comment.device_hash,
+      back: ctx.back,
+      postId: comment.post_id,
+      confirmText: '删掉就真的没了，确定吗？'
+    })}
     ${reportForm(ctx, { targetType: 'comment', targetId: comment.id })}
   </div>
   ${children.length ? html`<div class="replies">${raw(children.map((child) => commentNode(ctx, child, [])).join(''))}</div>` : ''}
@@ -223,6 +245,9 @@ export function feedPage({ ctx, posts, moods, mood, flash, error, draft, hasMore
       <label class="chip expire-chip" title="勾上之后，这条和它下面的回应会一起在到点时被真删掉">
         <input type="checkbox" name="expire" value="1"><span>⏳ ${expireDays} 天后自动消失</span>
       </label>
+      <label class="chip anon-chip" title="不留任何能关联到设备的痕迹：代号显示为 ***，站长也查不出这条是谁发的；凭据只存在你这台浏览器里，所以只有你能删。无痕帖自带 ${expireDays} 天自毁。">
+        <input type="checkbox" name="incognito" value="1"><span>*** 无痕</span>
+      </label>
       <button class="submit" type="submit">放进树洞</button>
     </div>
   </form>
@@ -253,15 +278,14 @@ export function postPage({ ctx, post, comments, flash, draft }) {
   <div class="actions">
     ${hugForm(ctx, { targetType: 'post', targetId: post.id, count: post.hug_count, hugged: ctx.huggedPosts.has(post.id) })}
     <span class="count">💬 回应 <span class="n">${post.reply_count}</span></span>
-    ${post.device_hash === ctx.deviceHash
-      ? html`<form class="inline" method="post" action="/delete" data-confirm="删掉整条树洞（含所有回应）就真的没了，确定吗？">
-      ${nonceField(ctx)}
-      <input type="hidden" name="target_type" value="post">
-      <input type="hidden" name="target_id" value="${post.id}">
-      <input type="hidden" name="back" value="/mine">
-      <button class="danger own" type="submit">删除</button>
-    </form>`
-      : ''}
+    ${deleteForm(ctx, {
+      targetType: 'post',
+      targetId: post.id,
+      ownerHash: post.device_hash,
+      back: '/mine',
+      postId: post.id,
+      confirmText: '删掉整条树洞（含所有回应）就真的没了，确定吗？'
+    })}
     ${reportForm(ctx, { targetType: 'post', targetId: post.id })}
   </div>
 </article>
@@ -300,6 +324,11 @@ export function minePage({ ctx, posts, flash }) {
 <p class="dim">这份列表只存在你这台设备的浏览器里。换设备或清掉浏览器数据，就找不回来了。</p>
 <section class="feed">
 ${raw(rows || '<p class="empty">你还没发过什么。</p>')}
+</section>
+<section class="feed">
+  <h2 class="page">无痕帖</h2>
+  <p class="dim">无痕帖不挂设备指纹，服务端认不出是你发的——所以只有这台浏览器（凭据存在本地）能列出和删掉它们。</p>
+  <div id="anon-list"><p class="empty">正在读本机存的凭据…</p></div>
 </section>`
   });
 }
@@ -314,7 +343,7 @@ export function privacyPage({ expireDays }) {
   <h2>对谁匿名</h2>
   <table class="admin">
     <tr><td><strong>同站其他访客</strong></td><td>看不到你是谁，只看到一个随机代号；但<strong>能看到你写的全部内容</strong>——这里是公开的匿名板，不是私密信箱。</td></tr>
-    <tr><td><strong>开这个站的人（站长）</strong></td><td>能看到全部内容和精确时间；看不到你的真实身份、IP、设备。但他<strong>能看出哪几条是同一台浏览器发的</strong>（靠下面那个设备编号）。</td></tr>
+    <tr><td><strong>开这个站的人（站长）</strong></td><td>能看到全部内容和精确时间；看不到你的真实身份、IP、设备。但他<strong>能看出哪几条是同一台浏览器发的</strong>（靠下面那个设备编号）。你勾了「*** 无痕」的帖子是例外——那种连他也查不出是谁发的。</td></tr>
     <tr><td><strong>Cloudflare</strong></td><td>你的流量全部经过它。它以 HTTPS 终点的身份，<strong>能看到你写的正文和你的 IP</strong>；它的日志怎么留、留多久，站长管不了。</td></tr>
     <tr><td><strong>GitHub</strong></td><td>入口页托管在 GitHub。你点那条链接的一瞬间，GitHub 会看到你的 IP（口令在链接的 <code>#</code> 后面，不会被它看到）。</td></tr>
     <tr><td><strong>你的宽带 / 学校网</strong></td><td>看得到你连了 Cloudflare，看不到内容（HTTPS 加密）。</td></tr>
@@ -349,7 +378,16 @@ export function privacyPage({ expireDays }) {
   <h2>cookie 和本地存储</h2>
   <ul>
     <li>只用三个 cookie：通行证（30 天，记住你输过口令）、设备编号（365 天，用来删自己的东西）、后台通行证（30 天，只有站长有）。都是 <code>HttpOnly</code>，脚本读不到，走 HTTPS 时会带 <code>Secure</code>。</li>
-    <li><strong>不使用 localStorage / sessionStorage</strong>，不在你设备上存任何额外的东西。</li>
+    <li><strong>平时不用 localStorage。</strong>唯一例外是你发了「<strong>*** 无痕</strong>」帖：删掉它的凭据存在<strong>你自己浏览器的 localStorage</strong> 里——正因为服务端不存，所以才只有你这台浏览器能删。清掉浏览器数据，那条就再也删不掉了。</li>
+  </ul>
+
+  <h2>关于「*** 无痕」帖</h2>
+  <ul>
+    <li>发的时候勾「*** 无痕」，这条<strong>不留任何设备痕迹</strong>：库里只存一段随机凭据的摘要，推不出是哪台设备、也串不到你其它帖子。代号显示为 <code>***</code>，同一帖里也看不出哪几句是同一个人写的。</li>
+    <li><strong>站长事后翻数据库也查不出这条是谁发的</strong>——这是它能给你的东西。</li>
+    <li>但它<strong>自带 ${expireDays} 天自毁</strong>，到期连回应一起真删。</li>
+    <li>两个诚实的边界：① 站长如果是<strong>当场</strong>盯着服务器流量，仍然能看到那一刻是哪个 IP 发出来的（事后反推不出来）；② 无痕帖被举报时，谁也查不出是谁写的，只能折叠或删掉，<strong>追不了责</strong>。</li>
+    <li>你自己也只在<strong>发帖的那台浏览器</strong>上能删它（「我发过的」页底部会列出来）。</li>
   </ul>
 
   <h2>你自己能做的</h2>
