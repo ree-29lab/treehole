@@ -485,7 +485,8 @@ test('隐私说明页把「对谁匿名」讲清楚，不写绝对话', async ()
   assert.match(html, /不存 IP 原文/);
   assert.match(html, /能看到你写的正文和你的 IP/, '要点名 Cloudflare 看得到正文，不只是元数据');
   assert.match(html, /GitHub/, '入口页那一跳也要写出来');
-  assert.match(html, /不使用 localStorage/);
+  assert.match(html, /平时不用 localStorage/);
+  assert.match(html, /关于「\*\*\* 无痕」帖/);
   assert.match(html, /最多留 7 份/, '备份留存期要写明');
   assert.match(html, /如果站长被要求配合调查/, '不承诺对抗强制调取');
   assert.match(html, /12356/);
@@ -537,4 +538,95 @@ test('删掉的内容在磁盘上也不留明文', async () => {
       `${file} 里还能搜到删掉的内容（secure_delete 没生效）`
     );
   }
+});
+
+test('无痕帖：代号 ***、库里查不出设备、只有凭据能删', async () => {
+  const author = client();
+  await author.enter();
+  const nonce = await author.nonce('/');
+  const posted = await author.post('/post', {
+    nonce,
+    body: '这条是无痕的。',
+    mood: '',
+    incognito: '1'
+  });
+  assert.equal(posted.status, 302);
+  const location = posted.headers.get('location');
+  const postId = Number(location.match(/#p(\d+)/)[1]);
+  const token = location.match(/[?&]at=([0-9a-f]{32})/)[1];
+  assert.ok(token, '发帖后应该在跳转里把凭据交给浏览器');
+
+  // 库里查出来是匿名的
+  const row = started.app.database.prepare('SELECT code, device_hash, expires_at FROM posts WHERE id = ?').get(postId);
+  assert.equal(row.code, '***');
+  assert.match(row.device_hash, /^anon:/, '不该存设备指纹');
+  assert.ok(row.expires_at > Date.now(), '无痕帖自带自毁时间');
+
+  // 页面上显示 ***，并且带上隐藏的删除按钮（由浏览器决定要不要显示）
+  const page = await author.get(`/p/${postId}`);
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, /\*\*\*/);
+  assert.match(html, /data-anon-delete/);
+  assert.match(html, /name="anon_token"/);
+
+  // 设备身份删不掉它（因为库里根本没有这台设备的指纹）
+  const deviceDelete = await author.post('/delete', {
+    nonce: await author.nonce('/'),
+    target_type: 'post',
+    target_id: String(postId),
+    back: '/mine'
+  });
+  assert.equal(deviceDelete.status, 403, '设备身份不该能删无痕帖');
+
+  // 凭据能查到、也能删
+  const lookup = await author.post('/anon/mine', { tokens: token });
+  assert.equal(lookup.status, 200);
+  const found = (await lookup.json()).posts;
+  assert.equal(found.length, 1);
+  assert.equal(found[0].id, postId);
+
+  const wrongToken = 'f'.repeat(32);
+  const wrongDelete = await author.post('/anon/delete', { target_type: 'post', target_id: String(postId), anon_token: wrongToken });
+  assert.equal(wrongDelete.status, 403);
+
+  const deleted = await author.post('/anon/delete', { target_type: 'post', target_id: String(postId), anon_token: token });
+  assert.equal(deleted.status, 200);
+  assert.equal((await author.get(`/p/${postId}`)).status, 404, '删掉就真的没了');
+});
+
+test('带着凭据回应无痕帖，那一句也跟着无痕', async () => {
+  const author = client();
+  await author.enter();
+  const nonce = await author.nonce('/');
+  const posted = await author.post('/post', { nonce, body: '无痕帖，等一句回应。', mood: '', incognito: '1' });
+  const postId = Number(posted.headers.get('location').match(/#p(\d+)/)[1]);
+  const token = posted.headers.get('location').match(/[?&]at=([0-9a-f]{32})/)[1];
+
+  const reply = await author.post(`/c/${postId}`, {
+    nonce: await author.nonce(`/p/${postId}`),
+    parent_id: '',
+    anon_token: token,
+    body: '自己回自己一句。'
+  });
+  assert.equal(reply.status, 302);
+
+  const comments = started.app.database.prepare('SELECT code, device_hash FROM comments WHERE post_id = ?').all(postId);
+  assert.equal(comments.length, 1);
+  assert.equal(comments[0].code, '***');
+  assert.match(comments[0].device_hash, /^anon:/, '这一句也不该挂设备指纹');
+
+  // 换个不带凭据的人来回应，就是普通的匿名代号
+  const stranger = client();
+  await stranger.enter();
+  await stranger.post(`/c/${postId}`, {
+    nonce: await stranger.nonce(`/p/${postId}`),
+    parent_id: '',
+    body: '一个路人。'
+  });
+  const strangerComment = started.app.database
+    .prepare('SELECT code, device_hash FROM comments WHERE post_id = ? AND body = ?')
+    .get(postId, '一个路人。');
+  assert.notEqual(strangerComment.code, '***');
+  assert.ok(!strangerComment.device_hash.startsWith('anon:'));
 });
