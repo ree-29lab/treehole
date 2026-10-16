@@ -40,8 +40,11 @@
 <script>
 (function () {
   // 当前隧道地址放在一个 secret gist 里，由 bin/start.sh / bin/stop.sh 自动更新。
+  // 优先走 api.github.com（内容永远是最新的），失败再退回 CDN 直链（可能有点旧）。
   // 换 gist 时这里和 bin/_common.sh 的 NOW_GIST_ID 要一起改。
-  var NOW_URL = 'https://gist.githubusercontent.com/ree-29lab/4f04245b3bf4abc77914dd26da2ba8cf/raw/now.json';
+  var GIST_ID = '4f04245b3bf4abc77914dd26da2ba8cf';
+  var NOW_API = 'https://api.github.com/gists/' + GIST_ID;
+  var NOW_RAW = 'https://gist.githubusercontent.com/ree-29lab/' + GIST_ID + '/raw/now.json';
 
   var state = document.getElementById('state');
   var hint = document.getElementById('hint');
@@ -53,8 +56,29 @@
     if (extra) { hint.textContent = extra; hint.style.display = 'block'; }
   }
 
-  fetch(NOW_URL + '?t=' + Date.now(), { cache: 'no-store' })
-    .then(function (response) { return response.json(); })
+  function fromApi() {
+    return fetch(NOW_API + '?t=' + Date.now(), {
+      cache: 'no-store',
+      headers: { Accept: 'application/vnd.github+json' }
+    })
+      .then(function (response) {
+        if (!response.ok) throw new Error('api ' + response.status);
+        return response.json();
+      })
+      .then(function (gist) {
+        return JSON.parse(gist.files['now.json'].content);
+      });
+  }
+
+  function fromRaw() {
+    return fetch(NOW_RAW + '?t=' + Date.now(), { cache: 'no-store' }).then(function (response) {
+      if (!response.ok) throw new Error('raw ' + response.status);
+      return response.json();
+    });
+  }
+
+  fromApi()
+    .catch(fromRaw)
     .then(function (info) {
       if (!info || !info.online || !info.url) {
         show('树洞现在没开门。', '主人在的时候才有门。找给你链接的人要一下，或者过会儿再来。');
