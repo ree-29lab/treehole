@@ -179,7 +179,7 @@ export function gatePage({ error }) {
     title: '口令',
     body: html`<section class="gate">
   <h1>🌳 树洞</h1>
-  <p>这里只对拿到口令的人开放。口令是几个中文字，问问给你链接的人。</p>
+  <p>这里只对拿到口令的人开放。口令问给你链接的人要——直接点他发的那条链接，就不用输了。</p>
   ${error ? html`<div class="flash err">${error}</div>` : ''}
   <form method="post" action="/gate">
     <input class="phrase" type="text" name="passphrase" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="输入口令" autofocus>
