@@ -13,6 +13,8 @@
 
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
+import { normalizePhrase } from './filter.js';
+
 function sign(secret, message) {
   return createHmac('sha256', secret).update(message).digest('hex');
 }
@@ -23,6 +25,19 @@ export function safeEqual(a, b) {
   const right = Buffer.from(String(b ?? ''), 'utf8');
   if (left.length !== right.length) return false;
   return timingSafeEqual(left, right);
+}
+
+/**
+ * Compare a typed passphrase with the configured one, forgiving the differences a
+ * phone keyboard introduces: full-width punctuation, smart quotes/dashes, stray
+ * spaces, and hyphens left out entirely.
+ */
+export function phraseMatches(input, expected) {
+  const typed = normalizePhrase(input);
+  const want = normalizePhrase(expected);
+  if (!typed || !want) return false;
+  if (safeEqual(typed, want)) return true;
+  return safeEqual(typed.replace(/-/g, ''), want.replace(/-/g, ''));
 }
 
 export function gateToken(credentials) {
