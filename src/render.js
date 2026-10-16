@@ -322,9 +322,10 @@ export function adminLoginPage({ error }) {
   return layout({
     title: '后台',
     body: html`<h1 class="page">后台</h1>
+<p class="dim">这里用<b>后台口令</b>，和发给朋友的访客口令不是同一个。忘了就跑一次 <code>bin/status.sh</code>，或者看 <code>data/secret.json</code> 里的 <code>adminPassphrase</code>。</p>
 ${error ? html`<div class="flash err">${error}</div>` : ''}
 <form class="adminlogin" method="post" action="/admin/login">
-  <input type="text" name="passphrase" placeholder="管理员口令" autocomplete="off" autofocus>
+  <input type="text" name="passphrase" placeholder="后台口令" autocomplete="off" autofocus>
   <button type="submit">进</button>
 </form>`
   });
