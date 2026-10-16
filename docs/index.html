@@ -77,6 +77,25 @@
     });
   }
 
+  // 先探一下门到底通不通：隧道地址刚换过时，有些网络会短暂解析不到，
+  // 直接跳过去会看到浏览器的报错页，不如在这里说清楚并给个重试。
+  function probe(origin, target) {
+    return fetch(origin + '/healthz', { mode: 'no-cors', cache: 'no-store' })
+      .then(function () {
+        state.innerHTML = '<span class="dot"></span>门开着，正在带你进去…';
+        go.href = target;
+        go.textContent = '进去';
+        go.style.display = 'inline-block';
+        setTimeout(function () { location.replace(target); }, 600);
+      })
+      .catch(function () {
+        go.href = target;
+        go.textContent = '还是想试试';
+        go.style.display = 'inline-block';
+        show('门开着，但你这边的网络上不去。', '刚换过地址时偶尔会这样，等半分钟点下面这个按钮再试一次。');
+      });
+  }
+
   fromApi()
     .catch(fromRaw)
     .then(function (info) {
@@ -84,11 +103,7 @@
         show('树洞现在没开门。', '主人在的时候才有门。找给你链接的人要一下，或者过会儿再来。');
         return;
       }
-      var target = info.url + (phrase ? '/?k=' + encodeURIComponent(phrase) : '/');
-      state.innerHTML = '<span class="dot"></span>门开着，正在带你进去…';
-      go.href = target;
-      go.style.display = 'inline-block';
-      setTimeout(function () { location.replace(target); }, 600);
+      probe(info.url, info.url + (phrase ? '/?k=' + encodeURIComponent(phrase) : '/'));
     })
     .catch(function () {
       show('连不上入口页。', '检查一下网络，或者找给你链接的人要新的地址。');
