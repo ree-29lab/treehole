@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS posts (
   code TEXT NOT NULL,
   device_hash TEXT NOT NULL,
   created_at INTEGER NOT NULL,
+  expires_at INTEGER,
   deleted_at INTEGER,
   hidden INTEGER NOT NULL DEFAULT 0,
   folded INTEGER NOT NULL DEFAULT 0,
@@ -83,7 +84,22 @@ export function openDb(path) {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+/**
+ * Additive migrations for databases created before a column existed.
+ * Index creation for a migrated column belongs here, not in SCHEMA: on an existing
+ * database `CREATE TABLE IF NOT EXISTS` is a no-op, so an index on the new column
+ * would fail if it ran before the ALTER TABLE.
+ */
+function migrate(db) {
+  const columns = db.prepare('PRAGMA table_info(posts)').all().map((row) => row.name);
+  if (!columns.includes('expires_at')) {
+    db.exec('ALTER TABLE posts ADD COLUMN expires_at INTEGER');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_posts_expires ON posts(expires_at)');
 }
 
 const TABLES = { post: 'posts', comment: 'comments' };
@@ -94,13 +110,13 @@ export function tableFor(targetType) {
   return table;
 }
 
-export function createPost(db, { body, mood, code, deviceHash, crisis, now }) {
+export function createPost(db, { body, mood, code, deviceHash, crisis, now, expiresAt = null }) {
   const info = db
     .prepare(
-      `INSERT INTO posts (body, mood, code, device_hash, created_at, folded)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO posts (body, mood, code, device_hash, created_at, expires_at, folded)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(body, mood, code, deviceHash, now, crisis ? 1 : 0);
+    .run(body, mood, code, deviceHash, now, expiresAt, crisis ? 1 : 0);
   return Number(info.lastInsertRowid);
 }
 
@@ -123,19 +139,25 @@ export function createComment(db, { postId, parentId, body, code, deviceHash, cr
   return id;
 }
 
-export function getPost(db, id) {
-  return db.prepare('SELECT * FROM posts WHERE id = ?').get(id) ?? null;
+/** @returns the post, or null when it does not exist or its self-destruct time has passed. */
+export function getPost(db, id, now = Date.now()) {
+  const row = db.prepare('SELECT * FROM posts WHERE id = ?').get(id) ?? null;
+  if (!row) return null;
+  if (row.expires_at !== null && row.expires_at <= now) return null;
+  return row;
 }
 
 /**
  * Visible posts, newest first, optionally filtered by mood or restricted to one device.
  * `includeHidden` keeps report-folded posts in the author's own list, so writing
  * something does not silently vanish from the person who wrote it.
+ * Posts whose self-destruct time has passed are filtered out immediately, even if the
+ * sweeper has not physically removed them yet.
  */
-export function listPosts(db, { before, limit, mood, deviceHash, includeHidden = false }) {
-  const where = ['deleted_at IS NULL'];
+export function listPosts(db, { before, limit, mood, deviceHash, includeHidden = false, now = Date.now() }) {
+  const where = ['deleted_at IS NULL', '(expires_at IS NULL OR expires_at > ?)'];
+  const params = [now];
   if (!includeHidden) where.push('hidden = 0');
-  const params = [];
   if (before) {
     where.push('id < ?');
     params.push(before);
@@ -154,6 +176,21 @@ export function listPosts(db, { before, limit, mood, deviceHash, includeHidden =
       `SELECT * FROM posts WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`
     )
     .all(...params);
+}
+
+/** Hard-delete every post (with its comments, hugs and reports) whose time has run out. */
+export function purgeExpiredPosts(db, now = Date.now()) {
+  const ids = db
+    .prepare('SELECT id FROM posts WHERE expires_at IS NOT NULL AND expires_at <= ?')
+    .all(now)
+    .map((row) => Number(row.id));
+  for (const id of ids) {
+    db.prepare('DELETE FROM comments WHERE post_id = ?').run(id);
+    db.prepare('DELETE FROM posts WHERE id = ?').run(id);
+    db.prepare('DELETE FROM hugs WHERE target_type = ? AND target_id = ?').run('post', id);
+    db.prepare('DELETE FROM reports WHERE target_type = ? AND target_id = ?').run('post', id);
+  }
+  return ids;
 }
 
 export function listComments(db, postId) {
