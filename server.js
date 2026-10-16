@@ -367,24 +367,43 @@ export function createApp(config) {
       if (postsToday >= settings.limits.postPerDay) {
         return errorResponse(res, 429, '这台设备今天发得够多了，让别人也说两句。');
       }
+      // 无痕帖在库里不挂设备指纹，于是天然绕开了「每设备每天 N 条」——按 IP 另设一道闸。
+      const incognito = form.get('incognito') !== null && form.get('incognito') !== '';
+      if (incognito) {
+        const ipHash = auth.opaqueId(credentials.secret, 'ip', clientIp(req));
+        const anonToday = store.countRate(database, { ipHash, action: 'anonpost', since: Date.now() - 86400000 });
+        if (anonToday >= settings.limits.anonPostsPerDay) {
+          return errorResponse(res, 429, '无痕帖今天发得够多了，明天再来。');
+        }
+        store.addRate(database, { ipHash, action: 'anonpost', now: Date.now() });
+      }
       const moodKey = String(form.get('mood') ?? '');
       const mood = settings.moods.some((m) => m.key === moodKey) ? moodKey : '';
       const now = Date.now();
       // 勾了「N 天后自动消失」的帖子，到点连回应一起真删（见 purgeExpiredPosts）
       const wantsExpiry = form.get('expire') !== null && form.get('expire') !== '';
-      const expiresAt = wantsExpiry ? now + settings.expireDays * 86400000 : null;
+      // 无痕帖：数据库里不留任何能关联到设备的痕迹，只留一个随机凭据的摘要；
+      // 凭据原文只交给发帖人自己的浏览器，所以「删掉自己发的」仍然成立。
+      const anonToken = incognito ? auth.newAnonToken() : null;
+      const expiresAt =
+        wantsExpiry || incognito ? now + settings.expireDays * 86400000 : null;
       const id = store.createPost(database, {
         body: checked.text,
         mood,
         code: '……',
-        deviceHash: device.deviceHash,
+        deviceHash: anonToken ? auth.anonHash(credentials.secret, anonToken) : device.deviceHash,
         crisis: checked.crisis,
         now,
         expiresAt
       });
-      store.setPostCode(database, id, auth.displayCode(words, device.deviceHash, id));
+      store.setPostCode(
+        database,
+        id,
+        anonToken ? '***' : auth.displayCode(words, device.deviceHash, id)
+      );
       const headers = device.setCookie ? { 'Set-Cookie': device.setCookie } : {};
-      return redirect(res, `/?flash=posted#p${id}`, headers);
+      const tokenParam = anonToken ? `&at=${anonToken}` : '';
+      return redirect(res, `/?flash=posted${tokenParam}#p${id}`, headers);
     }
 
     if (req.method === 'POST' && replyParam) {
@@ -420,12 +439,19 @@ export function createApp(config) {
         }
         parentId = parentRaw;
       }
+      // 浏览器带着这条无痕帖的凭据来回应：这一句也记成无痕（不挂设备指纹），
+      // 免得「谁在自己帖子里回过话」被反推出来。
+      const anonToken = String(form.get('anon_token') ?? '');
+      const matchesAnonPost =
+        anonToken !== '' && auth.anonHash(credentials.secret, anonToken) === post.device_hash;
       const commentId = store.createComment(database, {
         postId,
         parentId,
         body: checked.text,
-        code: auth.displayCode(words, device.deviceHash, postId),
-        deviceHash: device.deviceHash,
+        code: matchesAnonPost ? '***' : auth.displayCode(words, device.deviceHash, postId),
+        deviceHash: matchesAnonPost
+          ? auth.anonHash(credentials.secret, anonToken)
+          : device.deviceHash,
         crisis: checked.crisis,
         now: Date.now()
       });
@@ -496,9 +522,64 @@ export function createApp(config) {
       if (!['post', 'comment'].includes(targetType) || !targetId) {
         return errorResponse(res, 400, '删除对象不对。');
       }
-      const ok = store.deleteOwn(database, { targetType, targetId, deviceHash: device.deviceHash });
+      const anonToken = String(form.get('anon_token') ?? '');
+      const ownerHashes = [device.deviceHash];
+      if (anonToken !== '') ownerHashes.push(auth.anonHash(credentials.secret, anonToken));
+      const ok = store.deleteOwn(database, { targetType, targetId, ownerHashes });
       if (!ok) return errorResponse(res, 403, '这条不是你发的，删不了。');
       return redirect(res, `${back}${back.includes('?') ? '&' : '?'}flash=deleted`, device.setCookie ? { 'Set-Cookie': device.setCookie } : {});
+    }
+
+    // ---- 无痕帖：凭据只存在发帖人自己的浏览器里 ----
+    // 列表接口收 POST（凭据放请求体，不放 URL，免得进日志）
+    if (req.method === 'POST' && path === '/anon/mine') {
+      assertSameOrigin(req);
+      if (rateLimited(req, 'anonlookup', settings.limits.gatePerMinute)) {
+        return errorResponse(res, 429, '查得太快了。');
+      }
+      const form = await readForm(req);
+      const tokens = String(form.get('tokens') ?? '')
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => /^[0-9a-f]{32}$/.test(t))
+        .slice(0, 200);
+      const hashes = tokens.map((t) => auth.anonHash(credentials.secret, t));
+      const rows = store.postsByOwnerHashes(database, hashes);
+      const payload = rows.map((row) => ({
+        id: row.id,
+        body: row.body,
+        created_at: row.created_at,
+        reply_count: row.reply_count,
+        expires_at: row.expires_at
+      }));
+      return send(res, 200, JSON.stringify({ posts: payload }), {
+        'Content-Type': 'application/json; charset=utf-8',
+        ...(device.setCookie ? { 'Set-Cookie': device.setCookie } : {})
+      });
+    }
+
+    if (req.method === 'POST' && path === '/anon/delete') {
+      assertSameOrigin(req);
+      if (rateLimited(req, 'anondelete', settings.limits.gatePerMinute)) {
+        return errorResponse(res, 429, '慢一点。');
+      }
+      const form = await readForm(req);
+      const targetId = Number(form.get('target_id') ?? 0);
+      const anonToken = String(form.get('anon_token') ?? '');
+      const targetType = String(form.get('target_type') ?? 'post');
+      if (!targetId || !/^[0-9a-f]{32}$/.test(anonToken) || !['post', 'comment'].includes(targetType)) {
+        return errorResponse(res, 400, '凭据不对。');
+      }
+      const ok = store.deleteOwn(database, {
+        targetType,
+        targetId,
+        ownerHashes: [auth.anonHash(credentials.secret, anonToken)]
+      });
+      if (!ok) return errorResponse(res, 403, '这条不是用这个凭据发的，删不了。');
+      return send(res, 200, JSON.stringify({ deleted: true }), {
+        'Content-Type': 'application/json; charset=utf-8',
+        ...(device.setCookie ? { 'Set-Cookie': device.setCookie } : {})
+      });
     }
 
     // ---- 后台 ----
