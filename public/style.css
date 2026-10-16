@@ -244,3 +244,7 @@ footer p { margin: .3rem 0; }
 
 /* 自毁倒计时：让「这条会消失」一眼可见 */
 .meta .expiry { color: var(--accent); }
+
+/* 无痕帖：*** 的代号不要抢眼 */
+.meta .code.anon { letter-spacing: .12em; color: var(--dim); }
+.chip.anon-chip input:checked + span { color: var(--text); border-color: var(--text); background: var(--bg-soft); }
